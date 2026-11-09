@@ -1,0 +1,31 @@
+name: Cloud Job Agents
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 21 * * 0' # Monday 04:00 Vietnam (UTC+7); GitHub cron uses UTC
+permissions:
+  contents: write
+jobs:
+  research-and-tailor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r cloud_agents/requirements.txt
+      - name: Run job discovery and conditional CV tailoring
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          CV_FOLDER_ID: 1LGIhOhVuPbHjhHjX3w52rmDDLKABeHtM
+          JD_FOLDER_ID: 14WJbwcnOXuhgaasKDms33pD0bzM-Zk4K
+        run: python cloud_agents/run.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: job-report
+          path: cloud_agents/output/
