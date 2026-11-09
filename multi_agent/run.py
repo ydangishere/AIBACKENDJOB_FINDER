@@ -312,6 +312,8 @@ async def run_live(rows):
         date_evidence: str | None = None
         location: str | None = None
         salary: str | None = None
+        jd_summary: str | None = None
+        employment_type: str | None = None
 
     class ResearchResult(BaseModel):
         jobs: list[JobLead] = Field(default_factory=list)
@@ -330,11 +332,13 @@ async def run_live(rows):
                      model_settings=ModelSettings(reasoning=Reasoning(effort=EFFORT)))
 
     finder = agent("Agent 1 — Job Finder",
-        "Search for HCMC or HCMC-eligible remote roles in AI Engineering, AI Solutions, LLM/RAG/Agents, UI/UX and Product Design. "
-        "Find jobs posted during the last seven days. Use primary original JD pages and cross-check employers, dates, status. "
-        "Return ALL leads found with original URL and exact on-page date evidence when possible; never invent dates, URLs, or claims. "
-        "Look across ITviec, TopCV, company career pages, public Facebook, VietnamWorks; treat LinkedIn only as discovery. "
-        "Never silently drop old or unverifiable jobs.", ResearchResult,
+        "Search for HCMC or HCMC-eligible remote jobs. Search actual web pages, not only remembered jobs. "
+        "Find jobs published in the last seven days; return ALL leads including older or unverifiable ones separately. "
+        "For each job give source, DIRECT JD URL, exact ISO posting date only if supported by quoted on-page date_evidence, "
+        "short JD-specific requirements in jd_summary, and posted company/role/location. Do not hallucinate evidence. "
+        "Search ITviec, TopCV, company careers, public Facebook, VietnamWorks; use LinkedIn only for discovery and "
+        "prefer a non-LinkedIn direct application URL. Do not omit jobs merely because CV is unavailable. "
+        "Focus on real original JD content with source URLs, not job-list pages.", ResearchResult,
         [WebSearchTool(search_context_size="high")])
 
     tailor = agent("Agent 2 — CV Adjuster",
@@ -348,13 +352,23 @@ async def run_live(rows):
         "Do not omit any jobs; the controller renders every job row without your discretion. Never claim incomplete as complete.",
         ReportNotes)
 
-    result = await Runner.run(finder,
-        "Today's date is " + str(datetime.now(timezone(timedelta(hours=7))).date()) +
-        ". Search HCMC jobs and provide original verifiable links and dates. "
-        "Previously recorded leads (do not assume current): " +
-        json.dumps([{"company": j.get("company"), "position": j.get("position")}
-                    for j in rows], ensure_ascii=False))
-    discovered = [job.model_dump() for job in result.final_output.jobs]
+    today = str(datetime.now(timezone(timedelta(hours=7))).date())
+    search_queries = [
+        "Find HCMC AI Engineer, AI Solution Architect, GenAI, LLM, RAG, Python, agentic AI jobs "
+        "across primary company job pages, ITviec, TopCV, VietnamWorks, and public Facebook posts. "
+        "Search and report all direct JD links found, especially posts during the last seven days.",
+        "Find HCMC UI/UX Designer, Product Designer, UX Lead, UX Researcher jobs across original "
+        "company career sites, ITviec, TopCV, VietnamWorks, public Facebook and indexed LinkedIn leads. "
+        "Return direct non-LinkedIn JD links where possible and do not omit unverified leads.",
+    ]
+    discovered = []
+    for search_query in search_queries:
+        result = await Runner.run(finder,
+            "Today's date: " + today + ". " + search_query +
+            " Previously recorded leads (recheck when possible, do not assume current): " +
+            json.dumps([{"company": j.get("company"), "position": j.get("position")}
+                        for j in rows], ensure_ascii=False))
+        discovered.extend(job.model_dump() for job in result.final_output.jobs)
     rows = merge_jobs(rows, discovered)
     new_keys = {key(job) for job in discovered}
     for row in rows:
@@ -368,9 +382,12 @@ async def run_live(rows):
     for row in eligible:
         try:
             original = fetch_bytes(drive, SOURCE_HTML[decide_cv_type(row["position"])]).decode("utf-8")
-            description = "Target JD: " + json.dumps(row, ensure_ascii=False)
+            description = "Target job and real JD requirements: " + json.dumps(row, ensure_ascii=False)
+            clean_cv = re.sub(r"<(?:style|script)\b[^>]*>[\s\S]*?</(?:style|script)>",
+                              " ", original, flags=re.IGNORECASE)
+            clean_cv = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", clean_cv))[:13000]
             plan = await Runner.run(tailor,
-                "Existing CV source (do not invent experience): " + re.sub(r"<[^>]+>", " ", original)[:13500]
+                "Existing CV source (do not invent experience): " + clean_cv
                 + "\n" + description)
             result_cv = await write_cv(drive, row,
                 plan.final_output.position_applied, plan.final_output.summary)
