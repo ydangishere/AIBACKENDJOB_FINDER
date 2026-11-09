@@ -264,8 +264,11 @@ async def run_live(rows):
     from openai.types.shared import Reasoning
     from pydantic import BaseModel, Field
 
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("OPENAI_API_KEY missing; refusing model fallback")
+    required = ("OPENAI_API_KEY", "GOOGLE_DRIVE_CLIENT_ID",
+                "GOOGLE_DRIVE_CLIENT_SECRET", "GOOGLE_DRIVE_REFRESH_TOKEN")
+    missing = [name for name in required if not os.getenv(name)]
+    if missing:
+        raise RuntimeError("Refusing incomplete paid live run; missing credentials: " + ", ".join(missing))
 
     class JobLead(BaseModel):
         company: str
