@@ -31,6 +31,21 @@ jobs:
         run: pip install -r multi_agent/requirements.txt
       - name: Run offline correctness tests
         run: python -m unittest discover -s multi_agent/tests -v
+      - name: Validate secrets before paid live execution
+        if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+        run: |
+          for key in OPENAI_API_KEY GOOGLE_DRIVE_CLIENT_ID GOOGLE_DRIVE_CLIENT_SECRET GOOGLE_DRIVE_REFRESH_TOKEN; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Required GitHub Actions secret ${key} is missing. Skipping paid run."
+              exit 1
+            fi
+          done
       - name: Install browser for private CV PDF creation
         if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
         run: python -m playwright install --with-deps chromium
@@ -50,7 +65,7 @@ jobs:
             python multi_agent/run.py
           fi
       - name: Persist job master only (never CV content)
-        if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
+        if: ${{ always() && (vars.LIVE_ENABLED == 'true' || inputs.live == true) }}
         shell: bash
         run: |
           git config user.name "job-finder-bot"
@@ -61,6 +76,7 @@ jobs:
             git push
           fi
       - name: Upload report artifact (no CV files)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: complete-job-report
