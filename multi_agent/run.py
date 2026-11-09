@@ -139,8 +139,21 @@ def drive_client():
 
 def list_children(drive, folder_id):
     query = "'" + folder_id.replace("'", r"\'") + "' in parents and trashed = false"
-    response = drive.files().list(q=query, fields="nextPageToken,files(id,name,mimeType)", page_size=100).execute()
-    return response.get("files", [])
+    found = []
+    token = None
+    while True:
+        response = drive.files().list(
+            q=query,
+            fields="nextPageToken,files(id,name,mimeType)",
+            page_size=100,
+            pageToken=token,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
+        found.extend(response.get("files", []))
+        token = response.get("nextPageToken")
+        if not token:
+            return found
 
 
 def ensure_folder(drive, parent, name):
@@ -259,6 +272,14 @@ def markdown_report(rows, notes, run_mode):
     return "\n".join(lines) + "\n"
 
 
+def checkpoint(rows, notes, run_mode="LIVE"):
+    """Persist all leads and the FULL report after each completed agent stage."""
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    REPORT.write_text(markdown_report(rows, notes, run_mode), encoding="utf-8")
+    if run_mode == "LIVE":
+        MASTER.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 async def run_live(rows):
     from agents import Agent, ModelSettings, Runner, WebSearchTool
     from openai.types.shared import Reasoning
@@ -269,6 +290,18 @@ async def run_live(rows):
     missing = [name for name in required if not os.getenv(name)]
     if missing:
         raise RuntimeError("Refusing incomplete paid live run; missing credentials: " + ", ".join(missing))
+
+    # Fail before paid LLM calls when Drive OAuth lacks access to 'updated'.
+    drive = drive_client()
+    folder = drive.files().get(
+        fileId=UPDATED_FOLDER,
+        fields="id,mimeType,capabilities(canAddChildren)",
+        supportsAllDrives=True,
+    ).execute()
+    if folder.get("mimeType") != "application/vnd.google-apps.folder":
+        raise RuntimeError("The 'updated' destination is not a Google Drive folder")
+    if not folder.get("capabilities", {}).get("canAddChildren", False):
+        raise RuntimeError("Google Drive OAuth lacks write permission in 'updated'")
 
     class JobLead(BaseModel):
         company: str
@@ -330,12 +363,10 @@ async def run_live(rows):
         else:
             row["status"] = "unverified"
             row["verification_note"] = "Previous lead not reverified this run"
+    checkpoint(rows, "Agent 1 completed. Agent 2 and Agent 3 are pending.")
     eligible = [row for row in rows if row["status"] == "verified_new" and decide_cv_type(row["position"])]
-    drive = None
     for row in eligible:
         try:
-            if drive is None:
-                drive = drive_client()
             original = fetch_bytes(drive, SOURCE_HTML[decide_cv_type(row["position"])]).decode("utf-8")
             description = "Target JD: " + json.dumps(row, ensure_ascii=False)
             plan = await Runner.run(tailor,
@@ -350,11 +381,15 @@ async def run_live(rows):
         except Exception as exc:
             row["cv_status"] = "blocked"
             row["cv_issue"] = f"{type(exc).__name__}: {exc}"
+        finally:
+            checkpoint(rows, "Agent 1 complete. Agent 2 result recorded. Agent 3 pending.")
+    checkpoint(rows, "Agent 1 and Agent 2 finished; Agent 3 pending.")
     reviewed = await Runner.run(reporter,
         json.dumps([{"company": x.get("company"), "position": x.get("position"),
                      "status": x.get("status"), "cv_status": x.get("cv_status")}
                     for x in rows], ensure_ascii=False))
     notes = reviewed.final_output.summary + "\n\nUnfinished: " + reviewed.final_output.remaining_issues
+    checkpoint(rows, notes)
     return rows, notes
 
 
