@@ -398,18 +398,22 @@ async def main():
     parser.add_argument("--live", action="store_true", help="Requires OpenAI API and Google Drive OAuth")
     args = parser.parse_args()
     rows = load_master()
-    if args.live:
-        rows, notes = await run_live(rows)
-    else:
-        notes = "DRY RUN ONLY: no API calls, no independent agents invoked, no Google Drive writes."
-    REPORT.parent.mkdir(parents=True, exist_ok=True)
-    REPORT.write_text(markdown_report(rows, notes, "LIVE" if args.live else "DRY_RUN"), encoding="utf-8")
-    if args.live:
-        MASTER.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    if os.getenv("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-            handle.write(REPORT.read_text(encoding="utf-8"))
-    print("Report:", REPORT, "| jobs:", len(rows), "| live:", args.live)
+    try:
+        if args.live:
+            rows, notes = await run_live(rows)
+            checkpoint(rows, notes, "LIVE")
+        else:
+            notes = "DRY RUN ONLY: no API calls, no independent agents invoked, no Google Drive writes."
+            checkpoint(rows, notes, "DRY_RUN")
+        print("Report:", REPORT, "| jobs:", len(rows), "| live:", args.live)
+    except Exception as exc:
+        if not REPORT.exists():
+            checkpoint(rows, f"BLOCKED: {type(exc).__name__}: {exc}", "FAILED")
+        raise
+    finally:
+        if os.getenv("GITHUB_STEP_SUMMARY") and REPORT.exists():
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+                handle.write(REPORT.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
