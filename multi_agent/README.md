@@ -6,7 +6,7 @@ New independent-agent pipeline alongside the original repository scraper (unchan
 
 1. GitHub Actions triggers Monday at 04:00 (Asia/Ho_Chi_Minh), or via manual "Run workflow".
 2. A deterministic Python Orchestrator runs three **separate OpenAI Agents SDK agents** through Runner.run.
-3. Agent 1: Web research on HCMC AI, LLM/RAG, Product Design and UI/UX jobs; verifies real URLs and dates, merges an accumulated list of historical job leads without dropping any.
+3. Agent 1: Two independent research passes (AI/LLM and UI/UX/Product Design). Searches accessible public sources, records short JD-specific requirements, checks direct URLs and dates conservatively, and retains all 25 prior leads even when unverified. It does NOT claim to access private Facebook groups or independently run Codex research.
 4. Agent 2: Reads original CV, proposes truthful Position Applied and Introduction edits; Python code copies the **full original** HTML/other assets into a job-specific subfolder **under the Google Drive updated folder**, updates HTML via Drive API, reads back bytes, creates and checks PDF when browser is available.
 5. Agent 3: Reviews outcomes and blockers. **The full table is rendered deterministically by Python**, so a model cannot omit jobs in its final report.
 
@@ -22,6 +22,27 @@ To enable a real weekly run, set the following GitHub repository **Actions secre
 - `GOOGLE_DRIVE_CLIENT_ID`
 - `GOOGLE_DRIVE_CLIENT_SECRET`
 - `GOOGLE_DRIVE_REFRESH_TOKEN` — must have OAuth Drive write scope on the same account owning the CVs.
+
+## One-time Google Drive OAuth setup (local computer)
+
+Google Drive linked to ChatGPT does not automatically provide an OAuth refresh token to Python running on GitHub Actions. To grant the Python service access without sharing passwords:
+
+1. In Google Cloud Console, create an OAuth consent screen and OAuth Client ID of type **Desktop app** under a project you control. Ensure your Google account is allowed as a test user if the consent screen is in Testing mode.
+2. Download the OAuth client JSON as `multi_agent/google_oauth_client.json` locally. Never commit or upload it.
+3. Install dependencies and run `python multi_agent/setup_drive_oauth.py` **on your own computer**; sign into the Google account that owns the `updated` folder and approve Drive access.
+4. The script writes three secrets into a local ignored file `multi_agent/.env.drive.secrets`. Enter these three values in GitHub → repository Settings → Secrets and variables → Actions → Repository secrets. Do not paste them into chat.
+5. Add `OPENAI_API_KEY` in the same repository secrets area. This requires an OpenAI API account with billing.
+6. From GitHub Actions, manually run **Weekly independent GPT-6-Sol agents** with `live=true`; inspect the complete 25+ job table, CV Google Drive folders, and logs. Enable the Actions variable `LIVE_ENABLED=true` **only after a verified successful live run**.
+
+**Important security:** The Drive permission scope is broad because the pipeline must read existing templates and write new CV files. Keep secrets in GitHub Actions Secrets, never repository files. If access is no longer needed, revoke the OAuth grant in Google Account settings. The five CV files deleted from the branch may still exist in git history.
+
+## Quality gates
+
+- `.github/workflows/test-multi-agent.yml` runs Python syntax validation, offline regression tests, full 25-lead dry-run report check, and timezone validation on relevant pushes.
+- The live workflow refuses a paid run when required GitHub Secrets are missing, or Google Drive `updated` is not writable.
+- The orchestrator checkpoints the complete job report and master after each agent stage, so an Agent 2/3 failure does not silently lose the job list.
+- CVs are written to Drive, read back byte-for-byte, and PDFs are checked when created.
+- Github Actions holds job metadata and report artifacts, never CV HTML or PDF bytes.
 
 Then test **Actions → Weekly independent GPT-6-Sol agents → Run workflow → live**. Only after a successful live test, set the repository Actions **variable** `LIVE_ENABLED=true`.
 
