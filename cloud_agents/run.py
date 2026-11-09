@@ -6,6 +6,7 @@ import os
 import pathlib
 import re
 import requests
+from agent2 import process as tailor_cv
 from bs4 import BeautifulSoup
 
 OUT = pathlib.Path(__file__).parent / "output"
@@ -121,6 +122,15 @@ def main():
             status["cv_template_folders"] = [f["name"] for f in folders if f["mimeType"] == "application/vnd.google-apps.folder"]
             status["drive_manifest"] = drive_upload(token, os.environ["JD_FOLDER_ID"],
                 filename, json.dumps(report, ensure_ascii=False, indent=2))
+            if jobs:
+                status["tailored_cvs"] = []
+                for job in jobs:
+                    try:
+                        status["tailored_cvs"].append(tailor_cv(token,
+                            os.environ["CV_FOLDER_ID"], os.environ["JD_FOLDER_ID"], job))
+                    except Exception as exc:
+                        status.setdefault("agent2_errors", []).append(str(exc))
+                status["agent2"] = "completed" if status["tailored_cvs"] else "no CV generated"
         except (requests.RequestException, KeyError) as exc:
             status["drive_error"] = str(exc)
     else:
