@@ -1,0 +1,66 @@
+name: Weekly independent GPT-6-Sol agents
+
+on:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Live run calls OpenAI API and writes private CVs to Google Drive"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 4 * * 1"
+      timezone: "Asia/Ho_Chi_Minh"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: weekly-multi-agent-jobs
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install agent dependencies
+        run: pip install -r multi_agent/requirements.txt
+      - name: Install browser for private CV PDF creation
+        if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
+        run: python -m playwright install --with-deps chromium
+      - name: Run orchestrator
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+          GOOGLE_DRIVE_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          LIVE_ENABLED: ${{ vars.LIVE_ENABLED }}
+          MANUAL_LIVE: ${{ inputs.live }}
+        shell: bash
+        run: |
+          if [[ "$LIVE_ENABLED" == "true" || "$MANUAL_LIVE" == "true" ]]; then
+            python multi_agent/run.py --live
+          else
+            python multi_agent/run.py
+          fi
+      - name: Persist job master only (never CV content)
+        if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
+        shell: bash
+        run: |
+          git config user.name "job-finder-bot"
+          git config user.email "job-finder-bot@users.noreply.github.com"
+          git add multi_agent/data/master_jobs.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update complete job lead master from independent agents"
+            git push
+          fi
+      - name: Upload report artifact (no CV files)
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-job-report
+          path: multi_agent/output/report.md
+          if-no-files-found: error
