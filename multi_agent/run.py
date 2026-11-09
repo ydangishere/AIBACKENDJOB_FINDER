@@ -66,33 +66,50 @@ def merge_jobs(master, new_jobs):
 
 
 def verify_recent(job):
-    """Never mark a posting verified-new without independent date and link evidence."""
+    """Mark verified_new only when a live HTTPS JD page corroborates its posting date."""
     url = job.get("url") or ""
     posted = job.get("posted_on") or ""
     evidence = job.get("date_evidence") or ""
-    if not url.startswith("https://") or not evidence:
-        return "unverified", "Missing direct HTTPS URL or dated source evidence"
+    if not url.startswith("https://"):
+        return "unverified", "Direct HTTPS JD URL is missing"
     if "linkedin.com" in (urlparse(url).hostname or "").lower():
-        return "unverified", "LinkedIn is not an accessible application URL for this user"
+        return "unverified", "LinkedIn application URL is inaccessible for this user"
     try:
         when = date.fromisoformat(posted)
         today = datetime.now(timezone(timedelta(hours=7))).date()
         if when > today or (today - when).days > 7:
-            return "old_or_future", "Outside the last seven days"
-    except ValueError:
-        return "unverified", "No exact ISO posting date"
+            return "old_or_future", "Posting date is outside the most recent seven days"
+    except (ValueError, TypeError):
+        return "unverified", "Missing or invalid ISO posting date"
     try:
-        response = requests.get(url, timeout=20, allow_redirects=True,
-                                headers={"User-Agent": "Mozilla/5.0"})
+        response = requests.get(
+            url, timeout=20, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0"}
+        )
         response.raise_for_status()
         if "linkedin.com" in (urlparse(response.url).hostname or "").lower():
             return "unverified", "Application redirects to LinkedIn"
-        text = re.sub(r"\s+", " ", response.text).casefold()
-        if re.sub(r"\s+", " ", evidence).casefold() not in text:
-            return "unverified", "Posting-date evidence not independently found on the page"
-        return "verified_new", "Exact posting-date evidence found on accessible job page"
-    except Exception as exc:
-        return "unverified", f"Could not verify application URL: {type(exc).__name__}"
+        page = re.sub(r"\s+", " ", response.text).casefold()
+        closed = (
+            "job has expired", "applications closed", "no longer accepting applications",
+            "position has been filled", "đã hết hạn ứng tuyển", "đã đóng tuyển", "hết hạn tuyển dụng",
+        )
+        if any(phrase in page for phrase in closed):
+            return "closed", "Job page indicates applications are closed"
+        dates_on_page = re.findall(
+            r'["\'](?:dateposted|datepublished|article:published_time)["\']\s*[:=]\s*["\']'
+            r'(\d{4}-\d{2}-\d{2})',
+            page,
+            flags=re.IGNORECASE,
+        )
+        normalized_evidence = re.sub(r"\s+", " ", evidence).casefold().strip()
+        date_confirmed = posted in dates_on_page or (
+            bool(normalized_evidence) and normalized_evidence in page
+        )
+        if not date_confirmed:
+            return "unverified", "Exact publication date not corroborated on the live JD page"
+        return "verified_new", "Accessible non-LinkedIn JD with corroborated posting date; application form not tested"
+    except requests.RequestException as exc:
+        return "unverified", f"JD page could not be accessed: {type(exc).__name__}"
 
 
 def decide_cv_type(position):
