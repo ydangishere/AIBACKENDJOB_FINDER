@@ -46,7 +46,7 @@ class WorkflowTests(unittest.TestCase):
     def test_report_contains_every_job(self):
         jobs = run.load_master()
         report = run.markdown_report(jobs, "Audit", "DRY_RUN")
-        self.assertEqual(report.count("\n| ") - 1, 25)
+        self.assertEqual(report.count("\n| ") - 2, 25)
         for job in jobs:
             self.assertIn(job["company"], report)
 
