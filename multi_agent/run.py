@@ -386,6 +386,10 @@ async def run_live(rows):
             json.dumps([{"company": j.get("company"), "position": j.get("position")}
                         for j in rows], ensure_ascii=False))
         discovered.extend(job.model_dump() for job in result.final_output.jobs)
+        # Persist partial research before the next model call can fail.
+        checkpoint(merge_jobs(rows, discovered),
+                   f"Agent 1 research checkpoint: {len(discovered)} newly researched leads; "
+                   "verification and later agents still pending.")
     rows = merge_jobs(rows, discovered)
     new_keys = {key(job) for job in discovered}
     for row in rows:
