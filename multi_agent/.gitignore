@@ -1,0 +1,6 @@
+# Local Google credentials and generated reports: never commit
+google_oauth_client.json
+.env*
+output/
+__pycache__/
+*.pyc
