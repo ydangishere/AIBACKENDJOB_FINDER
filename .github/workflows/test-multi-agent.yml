@@ -1,0 +1,47 @@
+name: Offline multi-agent regression checks
+
+on:
+  push:
+    paths:
+      - "multi_agent/**"
+      - ".github/workflows/test-multi-agent.yml"
+  pull_request:
+    paths:
+      - "multi_agent/**"
+      - ".github/workflows/test-multi-agent.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install minimal offline dependencies
+        run: pip install requests pyyaml
+      - name: Verify source code compiles
+        run: python -m compileall -q multi_agent
+      - name: Run offline safety tests
+        run: python -m unittest discover -s multi_agent/tests -v
+      - name: Validate YAML schedule and local timezone
+        shell: python
+        run: |
+          import yaml
+          from pathlib import Path
+          yaml_path = Path(".github/workflows/weekly-multi-agent.yml")
+          data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+          schedule = data.get("on", data.get(True, {})).get("schedule", [])
+          assert schedule and schedule[0]["cron"] == "0 4 * * 1"
+          assert schedule[0]["timezone"] == "Asia/Ho_Chi_Minh"
+          print("Schedule verified: every Monday 04:00 Asia/Ho_Chi_Minh")
+      - name: Verify full report for 25 historical leads (DRY_RUN)
+        shell: bash
+        run: |
+          python multi_agent/run.py
+          test -f multi_agent/output/report.md
+          grep -q 'Total unique job leads: 25' multi_agent/output/report.md
