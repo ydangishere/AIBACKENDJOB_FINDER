@@ -43,6 +43,39 @@ class WorkflowTests(unittest.TestCase):
         status, reason = run.verify_recent(job)
         self.assertEqual(status, "unverified")
 
+    def test_date_from_live_job_schema(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        today = datetime.now(timezone(timedelta(hours=7))).date().isoformat()
+        job = {
+            "company": "Test", "position": "AI Engineer",
+            "url": "https://example.org/jobs/ai-engineer",
+            "posted_on": today, "date_evidence": "",
+        }
+        with patch.object(run.requests, "get") as request:
+            request.return_value.url = job["url"]
+            request.return_value.text = (
+                '<script type="application/ld+json">{"datePosted":"' + today + '"}</script>'
+            )
+            status, reason = run.verify_recent(job)
+        self.assertEqual(status, "verified_new")
+
+    def test_closed_job_is_not_verified(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import patch
+        today = datetime.now(timezone(timedelta(hours=7))).date().isoformat()
+        job = {
+            "url": "https://example.org/jobs/ai-engineer",
+            "posted_on": today, "date_evidence": "",
+        }
+        with patch.object(run.requests, "get") as request:
+            request.return_value.url = job["url"]
+            request.return_value.text = (
+                '{"datePosted":"' + today + '"} Applications closed'
+            )
+            status, reason = run.verify_recent(job)
+        self.assertEqual(status, "closed")
+
     def test_report_contains_every_job(self):
         jobs = run.load_master()
         report = run.markdown_report(jobs, "Audit", "DRY_RUN")
