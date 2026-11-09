@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
       - name: Install agent dependencies
         run: pip install -r multi_agent/requirements.txt
+      - name: Run offline correctness tests
+        run: python -m unittest discover -s multi_agent/tests -v
       - name: Install browser for private CV PDF creation
         if: ${{ vars.LIVE_ENABLED == 'true' || inputs.live == true }}
         run: python -m playwright install --with-deps chromium
