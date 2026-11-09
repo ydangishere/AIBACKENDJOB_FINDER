@@ -40,7 +40,7 @@ Live run, after setting the environment variables and running `python -m playwri
 - 25 historical leads initialized in `multi_agent/data/master_jobs.json`; all begin as **unverified**, not magically current jobs.
 - A full report with every lead is written to `multi_agent/output/report.md`, to GitHub Actions job summary, and an Actions artifact.
 - CVs go **only** to the connected Google Drive `updated` folder ID `1LGIhOhVuPbHjhHjX3w52rmDDLKABeHtM`, in private job-specific subfolders. CVs are **never committed to GitHub**.
-- The earlier 5 publicly committed CV HTML files are separate legacy artifacts. This new workflow does not update them.
+- The five CV HTML files mistakenly committed earlier have now been removed from the active GitHub branch. Their bytes may remain accessible in Git history until repository history is purged separately.
 - The new GitHub Actions run does not automatically send a report into a ChatGPT Project; a separate authorized notification integration is required. The existing ChatGPT Scheduled Task remains independent until the new pipeline is confirmed.
 - No automatic job application, email, or personal-data outbound dispatch.
 
