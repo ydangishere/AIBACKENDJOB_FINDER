@@ -7,9 +7,6 @@ on:
         description: "Live run calls OpenAI API and writes private CVs to Google Drive"
         type: boolean
         default: false
-  schedule:
-    - cron: "0 4 * * 1"
-      timezone: "Asia/Ho_Chi_Minh"
 
 permissions:
   contents: write
